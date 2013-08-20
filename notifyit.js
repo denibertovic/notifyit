@@ -1,15 +1,18 @@
 'use strict';
 
-var PORT           = 2012,
-    express        = require('express'),
-    crypto         = require('crypto'),
-    hostname       = require('os').hostname(),
-    colors         = require('colors'),
-    path           = require('path'),
-    app            = express.createServer(),
-    io             = require('socket.io'),
-    _              = require('underscore'),
-    homeFolder, port;
+var PORT               = 7000,
+    express            = require('express'),
+    crypto             = require('crypto'),
+    hostname           = require('os').hostname(),
+    colors             = require('colors'),
+    path               = require('path'),
+    app                = express(),
+    server             = require('http').createServer(app),
+    io                 = require('socket.io').listen(server),
+    pg                 = require('pg'),
+    listening          = {},
+    _                  = require('underscore'),
+    homeFolder, port, pgConnectionString;
 
 /**
  * Constructor
@@ -35,7 +38,7 @@ function NotifyIt( port ) {
     app.use (function(req, res, next) {
         var data='';
         req.setEncoding('utf8');
-        req.on('data', function(chunk) { 
+        req.on('data', function(chunk) {
            data += chunk;
         });
 
@@ -52,6 +55,9 @@ function NotifyIt( port ) {
 
     // port
     port = serverPort || parseInt(process.argv[2], 10) || PORT;
+
+    pgConnectionString = process.env.POSTGRES_CONNECTION_STRING;
+
   }
 
   /**
@@ -104,7 +110,6 @@ function NotifyIt( port ) {
           data:      obj
         };
 
-
     console.log('   info -'.cyan, 'publishing event'.white, evt.yellow, 'with data'.white, obj.toString().yellow);
     io.sockets.emit(evt, wrapper);
     io.sockets.emit('all', wrapper);
@@ -114,19 +119,34 @@ function NotifyIt( port ) {
    * Socket io initialization
    */
   function initSocketIO() {
-    io = io.listen(app);
     io.set('log level', 1);
 
-    io.sockets.on('connection', function onConnection(socket) {
-      socket.emit('connected');
+    io.sockets.on('connection', function(socket) {
+      if (pgConnectionString) {
+        socket.on('subscribe', function(channel) {
+          socket.join(channel);
+          if (!listening.hasOwnProperty(channel)) {
+            var client = new pg.Client(pgConnectionString);
+            client.connect();
+            client.query('LISTEN "'+channel+'"');
+            listening[channel] = client;
+            client.on('notification', function(data) {
+              io.sockets.in(channel).emit('notification', data.payload);
+            });
+          }
+        });
+      }else{
+        socket.emit('connected');
+      }
     });
+
   }
 
   /**
    * Start server
    */
   function start() {
-    app.listen(port);
+    server.listen(port);
     console.log('NotifyIt started on'.yellow, (hostname + ':' + port).cyan);
   }
 
@@ -134,7 +154,7 @@ function NotifyIt( port ) {
    * Stop server
    */
   function stop() {
-    app.close();
+    server.close();
     console.log('NotifyIt shutting down'.yellow);
   }
 
