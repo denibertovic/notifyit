@@ -57,6 +57,10 @@ function NotifyIt( port ) {
     port = serverPort || parseInt(process.argv[2], 10) || PORT;
 
     pgConnectionString = process.env.POSTGRES_CONNECTION_STRING;
+    if (!pgConnectionString){
+      console.log("No Postgres connection string evironment variable found.".yellow);
+      console.log("Disabling Postgres PUB/SUB support!".red);
+    }
 
   }
 
