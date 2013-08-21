@@ -131,7 +131,13 @@ function NotifyIt( port ) {
             client.query('LISTEN "'+channel+'"');
             listening[channel] = client;
             client.on('notification', function(data) {
-              io.sockets.in(channel).emit('notification', data.payload);
+              try {
+                var obj = JSON.parse(data.payload);
+                io.sockets.in(channel).emit('notification', obj);
+              } catch(e) {
+                console.log(e);
+                console.log(data.payload);
+              }
             });
           }
         });
