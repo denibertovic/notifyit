@@ -1,6 +1,6 @@
 'use strict';
 
-var PORT               = 7000,
+var PORT               = 2012,
     express            = require('express'),
     crypto             = require('crypto'),
     hostname           = require('os').hostname(),
@@ -115,32 +115,43 @@ function NotifyIt( port ) {
     io.sockets.emit('all', wrapper);
   }
 
+
+  /**
+   * Postgres PUB/SUB initialization
+   */
+  function initPostgresPubSub(socket) {
+    socket.on('subscribe', function(channel) {
+      socket.join(channel);
+      if (!listening.hasOwnProperty(channel)) {
+        // only create new connection and new listeners for new
+        // channels
+        var client = new pg.Client(pgConnectionString);
+        client.connect();
+        client.query('LISTEN "'+channel+'"');
+        listening[channel] = client;
+        client.on('notification', function(data) {
+          try {
+            var obj = JSON.parse(data.payload);
+            io.sockets.in(channel).emit('notification', obj);
+          } catch(e) {
+            console.log(e);
+            console.log(data.payload);
+          }
+        });
+      }
+    });
+  }
+
   /**
    * Socket io initialization
    */
+
   function initSocketIO() {
     io.set('log level', 1);
 
     io.sockets.on('connection', function(socket) {
       if (pgConnectionString) {
-        socket.on('subscribe', function(channel) {
-          socket.join(channel);
-          if (!listening.hasOwnProperty(channel)) {
-            var client = new pg.Client(pgConnectionString);
-            client.connect();
-            client.query('LISTEN "'+channel+'"');
-            listening[channel] = client;
-            client.on('notification', function(data) {
-              try {
-                var obj = JSON.parse(data.payload);
-                io.sockets.in(channel).emit('notification', obj);
-              } catch(e) {
-                console.log(e);
-                console.log(data.payload);
-              }
-            });
-          }
-        });
+        initPostgresPubSub(socket);
       }else{
         socket.emit('connected');
       }
