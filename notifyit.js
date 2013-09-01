@@ -126,6 +126,7 @@ function NotifyIt( port ) {
   function initPostgresPubSub(socket) {
     socket.on('subscribe', function(channel) {
       socket.join(channel);
+      console.log("New socket joined...");
       if (!listening.hasOwnProperty(channel)) {
         // only create new connection and new listeners for new
         // channels
@@ -146,6 +147,21 @@ function NotifyIt( port ) {
     });
   }
 
+  function cleanupAfterSocketLeave(room){
+    // we need to block here, and wait for the client to actually leave the room
+    process.nextTick(function(){
+        // remove leading slash
+        room = room.split('/')[1];
+        var cnt = io.sockets.clients(room).lenth;
+        if (!cnt) {
+            console.log('Unsubscribing from Postgres channel: ' + room);
+            var client = listening[room];
+            client.end();
+            delete listening[room];
+        }
+    });
+  }
+
   /**
    * Socket io initialization
    */
@@ -156,9 +172,20 @@ function NotifyIt( port ) {
     io.sockets.on('connection', function(socket) {
       if (pgConnectionString) {
         initPostgresPubSub(socket);
-      }else{
+      } else {
         socket.emit('connected');
       }
+
+      socket.on('disconnect', function() {
+        console.log('Browser Disconcerting!');
+        var rooms = io.sockets.manager.roomClients[socket.id];
+        for(var room in rooms) {
+          if (room){
+            socket.leave(room, cleanupAfterSocketLeave(room));
+          }
+        }
+      }); // end callback function
+
     });
 
   }
